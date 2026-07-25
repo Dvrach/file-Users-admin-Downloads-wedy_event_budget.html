@@ -192,6 +192,32 @@
   .item-actual{ font-size:12px; color:var(--hint); margin-top:2px; }
   .item-actual.over{ color:var(--destructive); }
 
+  .due-badge{
+    display:inline-block;
+    font-size:11px;
+    font-weight:600;
+    padding: 2px 7px;
+    border-radius: 8px;
+    margin-top: 4px;
+  }
+  .due-badge.overdue{ background: rgba(224,67,60,0.12); color:var(--destructive); }
+  .due-badge.soon{ background: rgba(245,166,35,0.15); color:#c07800; }
+  .due-badge.normal{ background: var(--bg); color:var(--hint); }
+
+  .reminders-section{ padding: 20px 16px 0; }
+  .reminder-row{
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    gap:10px;
+    padding: 10px 14px;
+    background:var(--bg);
+    border-bottom: 1px solid var(--secondary-bg);
+    cursor:pointer;
+  }
+  .reminder-row:last-child{ border-bottom:none; }
+  .reminder-row .rname{ font-size:14px; font-weight:500; flex:1; min-width:0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+
   /* ---------- Floating add button ---------- */
 
   .fab{
@@ -356,6 +382,11 @@
       </div>
     </div>
 
+    <div class="field">
+      <label for="fDue">Оплатить до (необязательно)</label>
+      <input id="fDue" type="date">
+    </div>
+
     <div class="modal-actions">
       <button class="btn btn-danger" id="btnDelete" style="display:none;">Удалить</button>
     </div>
@@ -447,6 +478,38 @@
     return n.toLocaleString('ru-RU');
   }
 
+  var MONTHS_SHORT = ['янв','фев','мар','апр','мая','июн','июл','авг','сен','окт','ноя','дек'];
+
+  function isPaid(it){
+    var planned = Number(it.planned) || 0;
+    var actual = Number(it.actual) || 0;
+    return actual > 0 && actual >= planned;
+  }
+
+  function dueStatus(it){
+    if (!it.dueDate) return null;
+    var today = new Date();
+    today.setHours(0,0,0,0);
+    var due = new Date(it.dueDate + 'T00:00:00');
+    if (isNaN(due.getTime())) return null;
+    var diffDays = Math.round((due - today) / 86400000);
+    var dateLabel = due.getDate() + ' ' + MONTHS_SHORT[due.getMonth()];
+
+    if (isPaid(it)){
+      return { level: 'normal', text: 'Оплачено', diffDays: diffDays };
+    }
+    if (diffDays < 0){
+      return { level: 'overdue', text: 'Просрочено на ' + Math.abs(diffDays) + ' дн.', diffDays: diffDays };
+    }
+    if (diffDays === 0){
+      return { level: 'soon', text: 'Сегодня', diffDays: diffDays };
+    }
+    if (diffDays <= 7){
+      return { level: 'soon', text: 'Через ' + diffDays + ' дн.', diffDays: diffDays };
+    }
+    return { level: 'normal', text: 'до ' + dateLabel, diffDays: diffDays };
+  }
+
   function totals(){
     var planned = 0, actual = 0;
     state.items.forEach(function(it){
@@ -500,11 +563,13 @@
     } else {
       itemsHtml = '<div class="item-list">' + state.items.map(function(it){
         var over = Number(it.actual) > Number(it.planned) && Number(it.planned) > 0;
+        var due = dueStatus(it);
         return (
           '<div class="item-row" data-id="' + it.id + '">' +
             '<div class="item-main">' +
               '<div class="item-name">' + escapeHtml(it.name) + '</div>' +
               (it.category ? '<div class="item-category">' + escapeHtml(it.category) + '</div>' : '') +
+              (due ? '<div class="due-badge ' + due.level + '">' + due.text + '</div>' : '') +
             '</div>' +
             '<div class="item-amounts">' +
               '<div class="item-planned">' + fmt(it.planned) + ' ₽</div>' +
@@ -513,6 +578,30 @@
           '</div>'
         );
       }).join('') + '</div>';
+    }
+
+    var reminders = state.items
+      .filter(function(it){ return it.dueDate && !isPaid(it); })
+      .map(function(it){ return { item: it, status: dueStatus(it) }; })
+      .filter(function(r){ return r.status && r.status.diffDays <= 14; })
+      .sort(function(a, b){ return a.status.diffDays - b.status.diffDays; });
+
+    var remindersHtml = '';
+    if (reminders.length > 0){
+      remindersHtml =
+        '<div class="reminders-section">' +
+          '<div class="list-header"><h2>Ближайшие платежи</h2></div>' +
+          '<div class="item-list">' +
+            reminders.map(function(r){
+              return (
+                '<div class="reminder-row" data-id="' + r.item.id + '">' +
+                  '<span class="rname">' + escapeHtml(r.item.name) + '</span>' +
+                  '<span class="due-badge ' + r.status.level + '">' + r.status.text + '</span>' +
+                '</div>'
+              );
+            }).join('') +
+          '</div>' +
+        '</div>';
     }
 
     appEl.innerHTML =
@@ -538,6 +627,7 @@
           '</div>' +
         '</div>' +
       '</div>' +
+      remindersHtml +
       '<div class="list-section">' +
         '<div class="list-header"><h2>Статьи расходов</h2></div>' +
         itemsHtml +
@@ -550,7 +640,7 @@
       scheduleSave();
     });
 
-    Array.prototype.forEach.call(document.querySelectorAll('.item-row'), function(row){
+    Array.prototype.forEach.call(document.querySelectorAll('.item-row, .reminder-row'), function(row){
       row.addEventListener('click', function(){
         openModal(row.getAttribute('data-id'));
       });
@@ -571,6 +661,7 @@
   var fCategory = document.getElementById('fCategory');
   var fPlanned = document.getElementById('fPlanned');
   var fActual = document.getElementById('fActual');
+  var fDue = document.getElementById('fDue');
   var btnDelete = document.getElementById('btnDelete');
   var quickCats = document.getElementById('quickCats');
 
@@ -597,6 +688,7 @@
     fCategory.value = item ? (item.category || '') : '';
     fPlanned.value = item ? (item.planned || '') : '';
     fActual.value = item ? (item.actual || '') : '';
+    fDue.value = item ? (item.dueDate || '') : '';
     btnDelete.style.display = item ? 'block' : 'none';
 
     renderQuickCats();
@@ -638,6 +730,7 @@
     var planned = fPlanned.value === '' ? 0 : Number(fPlanned.value);
     var actual = fActual.value === '' ? 0 : Number(fActual.value);
     var category = fCategory.value.trim();
+    var dueDate = fDue.value || '';
 
     if (editingId){
       var item = state.items.find(function(i){ return i.id === editingId; });
@@ -645,13 +738,15 @@
       item.category = category;
       item.planned = planned;
       item.actual = actual;
+      item.dueDate = dueDate;
     } else {
       state.items.push({
         id: uid(),
         name: name,
         category: category,
         planned: planned,
-        actual: actual
+        actual: actual,
+        dueDate: dueDate
       });
     }
 
