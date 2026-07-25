@@ -1,0 +1,726 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Смета мероприятия</title>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<style>
+  :root{
+    --bg: #ffffff;
+    --secondary-bg: #f0f0f0;
+    --text: #000000;
+    --hint: #999999;
+    --link: #2481cc;
+    --button: #2481cc;
+    --button-text: #ffffff;
+    --destructive: #e0433c;
+    --positive: #34a853;
+    --radius: 14px;
+    --gap: 12px;
+  }
+
+  *{ box-sizing:border-box; -webkit-tap-highlight-color: transparent; }
+
+  html,body{
+    margin:0; padding:0;
+    background:var(--bg);
+    color:var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    -webkit-font-smoothing:antialiased;
+    height:100%;
+    overscroll-behavior-y: none;
+  }
+
+  #app{
+    display:flex;
+    flex-direction:column;
+    min-height:100vh;
+    padding-bottom: 100px;
+  }
+
+  /* ---------- Header / summary ---------- */
+
+  .header{
+    padding: 18px 16px 14px;
+  }
+
+  .title-row{
+    display:flex;
+    align-items:center;
+    gap:8px;
+    margin-bottom: 16px;
+  }
+
+  .title-input{
+    flex:1;
+    background:none;
+    border:none;
+    font-size:22px;
+    font-weight:700;
+    color:var(--text);
+    padding:0;
+    outline:none;
+    min-width:0;
+  }
+
+  .summary-card{
+    background:var(--secondary-bg);
+    border-radius: var(--radius);
+    padding: 16px;
+    display:flex;
+    align-items:center;
+    gap: 16px;
+  }
+
+  .gauge{
+    flex-shrink:0;
+    position:relative;
+    width:76px;
+    height:76px;
+  }
+
+  .gauge svg{ transform: rotate(-90deg); }
+
+  .gauge-track{ fill:none; stroke: var(--bg); stroke-width:8; }
+  .gauge-fill{
+    fill:none;
+    stroke-width:8;
+    stroke-linecap: round;
+    transition: stroke-dasharray 0.4s ease, stroke 0.4s ease;
+  }
+
+  .gauge-label{
+    position:absolute;
+    inset:0;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    font-size:13px;
+    font-weight:700;
+  }
+
+  .summary-numbers{ flex:1; min-width:0; }
+
+  .summary-row{
+    display:flex;
+    justify-content:space-between;
+    font-size:14px;
+    line-height:1.6;
+  }
+
+  .summary-row .label{ color:var(--hint); }
+  .summary-row .value{ font-weight:600; font-variant-numeric: tabular-nums; }
+  .summary-row.total .value{ font-size:16px; }
+  .summary-row.diff .value.over{ color:var(--destructive); }
+  .summary-row.diff .value.under{ color:var(--positive); }
+
+  /* ---------- List ---------- */
+
+  .list-section{
+    padding: 20px 16px 0;
+    flex:1;
+  }
+
+  .list-header{
+    display:flex;
+    justify-content:space-between;
+    align-items:baseline;
+    margin-bottom:8px;
+    padding: 0 4px;
+  }
+
+  .list-header h2{
+    font-size:13px;
+    text-transform:uppercase;
+    letter-spacing:0.04em;
+    color:var(--hint);
+    font-weight:600;
+    margin:0;
+  }
+
+  .empty-state{
+    text-align:center;
+    padding: 48px 24px;
+    color:var(--hint);
+  }
+
+  .empty-state .emoji{ font-size:40px; display:block; margin-bottom:12px; }
+  .empty-state p{ margin:0; font-size:15px; line-height:1.5; }
+
+  .item-list{
+    background:var(--secondary-bg);
+    border-radius: var(--radius);
+    overflow:hidden;
+  }
+
+  .item-row{
+    display:flex;
+    align-items:center;
+    gap:12px;
+    padding: 12px 14px;
+    background:var(--bg);
+    border-bottom: 1px solid var(--secondary-bg);
+    cursor:pointer;
+  }
+
+  .item-row:last-child{ border-bottom:none; }
+
+  .item-main{ flex:1; min-width:0; }
+
+  .item-name{
+    font-size:15px;
+    font-weight:500;
+    white-space:nowrap;
+    overflow:hidden;
+    text-overflow:ellipsis;
+  }
+
+  .item-category{
+    font-size:12px;
+    color:var(--hint);
+    margin-top:2px;
+  }
+
+  .item-amounts{
+    text-align:right;
+    flex-shrink:0;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .item-planned{ font-size:15px; font-weight:600; }
+  .item-actual{ font-size:12px; color:var(--hint); margin-top:2px; }
+  .item-actual.over{ color:var(--destructive); }
+
+  /* ---------- Floating add button ---------- */
+
+  .fab{
+    position:fixed;
+    right:16px;
+    bottom:24px;
+    width:56px;
+    height:56px;
+    border-radius:50%;
+    background:var(--button);
+    color:var(--button-text);
+    border:none;
+    font-size:28px;
+    line-height:1;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    box-shadow: 0 4px 14px rgba(0,0,0,0.2);
+    cursor:pointer;
+  }
+  .fab:active{ transform: scale(0.94); }
+
+  /* ---------- Modal ---------- */
+
+  .modal-overlay{
+    position:fixed;
+    inset:0;
+    background:rgba(0,0,0,0.4);
+    display:none;
+    align-items:flex-end;
+    z-index:50;
+  }
+  .modal-overlay.open{ display:flex; }
+
+  .modal-sheet{
+    background:var(--bg);
+    width:100%;
+    border-radius: 18px 18px 0 0;
+    padding: 8px 16px 24px;
+    max-height:88vh;
+    overflow-y:auto;
+  }
+
+  .modal-handle{
+    width:36px;
+    height:4px;
+    border-radius:2px;
+    background:var(--secondary-bg);
+    margin: 8px auto 16px;
+  }
+
+  .modal-title{
+    font-size:18px;
+    font-weight:700;
+    margin: 0 0 16px;
+  }
+
+  .field{ margin-bottom:14px; }
+
+  .field label{
+    display:block;
+    font-size:12px;
+    color:var(--hint);
+    margin-bottom:6px;
+    text-transform:uppercase;
+    letter-spacing:0.03em;
+  }
+
+  .field input, .field select{
+    width:100%;
+    border:none;
+    background:var(--secondary-bg);
+    border-radius:10px;
+    padding: 12px 14px;
+    font-size:16px;
+    color:var(--text);
+    outline:none;
+    font-family:inherit;
+  }
+
+  .field-row{ display:flex; gap:10px; }
+  .field-row .field{ flex:1; }
+
+  .modal-actions{
+    display:flex;
+    gap:10px;
+    margin-top:6px;
+  }
+
+  .btn{
+    flex:1;
+    border:none;
+    border-radius:10px;
+    padding:13px;
+    font-size:16px;
+    font-weight:600;
+    cursor:pointer;
+  }
+  .btn-primary{ background:var(--button); color:var(--button-text); }
+  .btn-danger{ background:transparent; color:var(--destructive); }
+  .btn-primary:active{ opacity:0.85; }
+
+  .quick-cats{
+    display:flex;
+    flex-wrap:wrap;
+    gap:6px;
+    margin-top:8px;
+  }
+  .quick-cat{
+    font-size:12px;
+    padding:6px 10px;
+    border-radius:20px;
+    background:var(--secondary-bg);
+    color:var(--text);
+    border:none;
+    cursor:pointer;
+  }
+  .quick-cat.active{ background:var(--button); color:var(--button-text); }
+
+  .loading{
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    height:60vh;
+    color:var(--hint);
+    font-size:14px;
+  }
+</style>
+</head>
+<body>
+
+<div id="app">
+  <div class="loading" id="loadingState">Загружаю смету…</div>
+</div>
+
+<button class="fab" id="fabAdd" style="display:none;">+</button>
+
+<div class="modal-overlay" id="modalOverlay">
+  <div class="modal-sheet">
+    <div class="modal-handle"></div>
+    <h3 class="modal-title" id="modalTitle">Новая статья</h3>
+
+    <div class="field">
+      <label for="fName">Название</label>
+      <input id="fName" type="text" placeholder="Например: Аренда зала" maxlength="60">
+      <div class="quick-cats" id="quickCats"></div>
+    </div>
+
+    <div class="field">
+      <label for="fCategory">Категория (необязательно)</label>
+      <input id="fCategory" type="text" placeholder="Например: Площадка" maxlength="30">
+    </div>
+
+    <div class="field-row">
+      <div class="field">
+        <label for="fPlanned">План, ₽</label>
+        <input id="fPlanned" type="number" inputmode="numeric" placeholder="0">
+      </div>
+      <div class="field">
+        <label for="fActual">Факт, ₽</label>
+        <input id="fActual" type="number" inputmode="numeric" placeholder="0">
+      </div>
+    </div>
+
+    <div class="modal-actions">
+      <button class="btn btn-danger" id="btnDelete" style="display:none;">Удалить</button>
+    </div>
+  </div>
+</div>
+
+<script>
+(function(){
+  "use strict";
+
+  var tg = window.Telegram ? window.Telegram.WebApp : null;
+  var inTelegram = !!tg;
+
+  // ---------- In-memory fallback (used only outside Telegram, for preview) ----------
+  var memoryStore = {};
+
+  function csGet(key){
+    return new Promise(function(resolve){
+      if (inTelegram && tg.CloudStorage){
+        tg.CloudStorage.getItem(key, function(err, value){
+          resolve(err ? null : (value || null));
+        });
+      } else {
+        resolve(memoryStore[key] || null);
+      }
+    });
+  }
+
+  function csSet(key, value){
+    return new Promise(function(resolve){
+      if (inTelegram && tg.CloudStorage){
+        tg.CloudStorage.setItem(key, value, function(){ resolve(); });
+      } else {
+        memoryStore[key] = value;
+        resolve();
+      }
+    });
+  }
+
+  // ---------- Theme ----------
+  function applyTheme(){
+    if (!inTelegram) return;
+    var p = tg.themeParams || {};
+    var root = document.documentElement.style;
+    if (p.bg_color) root.setProperty('--bg', p.bg_color);
+    if (p.secondary_bg_color) root.setProperty('--secondary-bg', p.secondary_bg_color);
+    if (p.text_color) root.setProperty('--text', p.text_color);
+    if (p.hint_color) root.setProperty('--hint', p.hint_color);
+    if (p.link_color) root.setProperty('--link', p.link_color);
+    if (p.button_color) root.setProperty('--button', p.button_color);
+    if (p.button_text_color) root.setProperty('--button-text', p.button_text_color);
+    document.body.style.background = 'var(--bg)';
+  }
+
+  if (inTelegram){
+    tg.ready();
+    tg.expand();
+    applyTheme();
+    tg.onEvent('themeChanged', applyTheme);
+    if (tg.setHeaderColor) { try { tg.setHeaderColor('secondary_bg_color'); } catch(e){} }
+  }
+
+  function haptic(type){
+    if (inTelegram && tg.HapticFeedback){
+      if (type === 'success' || type === 'error' || type === 'warning'){
+        tg.HapticFeedback.notificationOccurred(type);
+      } else {
+        tg.HapticFeedback.impactOccurred(type || 'light');
+      }
+    }
+  }
+
+  // ---------- State ----------
+  var STORAGE_KEY = 'wedy_event_budget_v1';
+  var state = {
+    title: 'Смета мероприятия',
+    items: []
+  };
+  var editingId = null;
+
+  var DEFAULT_QUICK_CATS = ['Площадка','Кейтеринг','Декор','Развлечения','Транспорт','Полиграфия','Прочее'];
+
+  function uid(){
+    return 'i' + Date.now().toString(36) + Math.random().toString(36).slice(2,7);
+  }
+
+  function fmt(n){
+    n = Number(n) || 0;
+    return n.toLocaleString('ru-RU');
+  }
+
+  function totals(){
+    var planned = 0, actual = 0;
+    state.items.forEach(function(it){
+      planned += Number(it.planned) || 0;
+      actual += Number(it.actual) || 0;
+    });
+    return { planned: planned, actual: actual };
+  }
+
+  // ---------- Persistence ----------
+  var saveTimer = null;
+  function scheduleSave(){
+    clearTimeout(saveTimer);
+    saveTimer = setTimeout(function(){
+      csSet(STORAGE_KEY, JSON.stringify(state));
+    }, 250);
+  }
+
+  function load(){
+    return csGet(STORAGE_KEY).then(function(raw){
+      if (raw){
+        try {
+          var parsed = JSON.parse(raw);
+          if (parsed && Array.isArray(parsed.items)){
+            state = parsed;
+          }
+        } catch(e){ /* ignore corrupted data */ }
+      }
+    });
+  }
+
+  // ---------- Rendering ----------
+  var appEl = document.getElementById('app');
+  var fabEl = document.getElementById('fabAdd');
+
+  function render(){
+    var t = totals();
+    var pct = t.planned > 0 ? Math.min(100, Math.round((t.actual / t.planned) * 100)) : 0;
+    var diff = t.planned - t.actual;
+    var circumference = 2 * Math.PI * 34;
+    var dash = (pct / 100) * circumference;
+    var gaugeColor = t.actual > t.planned ? 'var(--destructive)' : 'var(--button)';
+
+    var itemsHtml;
+    if (state.items.length === 0){
+      itemsHtml =
+        '<div class="empty-state">' +
+          '<span class="emoji">🧾</span>' +
+          '<p>Пока пусто. Нажми «+», чтобы добавить первую статью расходов.</p>' +
+        '</div>';
+    } else {
+      itemsHtml = '<div class="item-list">' + state.items.map(function(it){
+        var over = Number(it.actual) > Number(it.planned) && Number(it.planned) > 0;
+        return (
+          '<div class="item-row" data-id="' + it.id + '">' +
+            '<div class="item-main">' +
+              '<div class="item-name">' + escapeHtml(it.name) + '</div>' +
+              (it.category ? '<div class="item-category">' + escapeHtml(it.category) + '</div>' : '') +
+            '</div>' +
+            '<div class="item-amounts">' +
+              '<div class="item-planned">' + fmt(it.planned) + ' ₽</div>' +
+              (it.actual ? '<div class="item-actual ' + (over ? 'over' : '') + '">факт ' + fmt(it.actual) + ' ₽</div>' : '') +
+            '</div>' +
+          '</div>'
+        );
+      }).join('') + '</div>';
+    }
+
+    appEl.innerHTML =
+      '<div class="header">' +
+        '<div class="title-row">' +
+          '<input class="title-input" id="titleInput" value="' + escapeAttr(state.title) + '" maxlength="60">' +
+        '</div>' +
+        '<div class="summary-card">' +
+          '<div class="gauge">' +
+            '<svg viewBox="0 0 80 80" width="76" height="76">' +
+              '<circle class="gauge-track" cx="40" cy="40" r="34"></circle>' +
+              '<circle class="gauge-fill" cx="40" cy="40" r="34" ' +
+                'stroke="' + gaugeColor + '" ' +
+                'stroke-dasharray="' + dash.toFixed(1) + ' ' + circumference.toFixed(1) + '"></circle>' +
+            '</svg>' +
+            '<div class="gauge-label">' + pct + '%</div>' +
+          '</div>' +
+          '<div class="summary-numbers">' +
+            '<div class="summary-row total"><span class="label">План</span><span class="value">' + fmt(t.planned) + ' ₽</span></div>' +
+            '<div class="summary-row"><span class="label">Факт</span><span class="value">' + fmt(t.actual) + ' ₽</span></div>' +
+            '<div class="summary-row diff"><span class="label">' + (diff >= 0 ? 'Остаток' : 'Перерасход') + '</span>' +
+              '<span class="value ' + (diff >= 0 ? 'under' : 'over') + '">' + fmt(Math.abs(diff)) + ' ₽</span></div>' +
+          '</div>' +
+        '</div>' +
+      '</div>' +
+      '<div class="list-section">' +
+        '<div class="list-header"><h2>Статьи расходов</h2></div>' +
+        itemsHtml +
+      '</div>';
+
+    fabEl.style.display = 'flex';
+
+    document.getElementById('titleInput').addEventListener('change', function(e){
+      state.title = e.target.value.trim() || 'Смета мероприятия';
+      scheduleSave();
+    });
+
+    Array.prototype.forEach.call(document.querySelectorAll('.item-row'), function(row){
+      row.addEventListener('click', function(){
+        openModal(row.getAttribute('data-id'));
+      });
+    });
+  }
+
+  function escapeHtml(s){
+    return String(s || '').replace(/[&<>"']/g, function(c){
+      return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];
+    });
+  }
+  function escapeAttr(s){ return escapeHtml(s); }
+
+  // ---------- Modal ----------
+  var overlay = document.getElementById('modalOverlay');
+  var modalTitle = document.getElementById('modalTitle');
+  var fName = document.getElementById('fName');
+  var fCategory = document.getElementById('fCategory');
+  var fPlanned = document.getElementById('fPlanned');
+  var fActual = document.getElementById('fActual');
+  var btnDelete = document.getElementById('btnDelete');
+  var quickCats = document.getElementById('quickCats');
+
+  function renderQuickCats(){
+    quickCats.innerHTML = DEFAULT_QUICK_CATS.map(function(c){
+      return '<button type="button" class="quick-cat" data-cat="' + escapeAttr(c) + '">' + c + '</button>';
+    }).join('');
+    Array.prototype.forEach.call(quickCats.querySelectorAll('.quick-cat'), function(btn){
+      btn.addEventListener('click', function(){
+        fCategory.value = btn.getAttribute('data-cat');
+        Array.prototype.forEach.call(quickCats.querySelectorAll('.quick-cat'), function(b){ b.classList.remove('active'); });
+        btn.classList.add('active');
+        haptic('light');
+      });
+    });
+  }
+
+  function openModal(id){
+    editingId = id || null;
+    var item = editingId ? state.items.find(function(i){ return i.id === editingId; }) : null;
+
+    modalTitle.textContent = item ? 'Изменить статью' : 'Новая статья';
+    fName.value = item ? item.name : '';
+    fCategory.value = item ? (item.category || '') : '';
+    fPlanned.value = item ? (item.planned || '') : '';
+    fActual.value = item ? (item.actual || '') : '';
+    btnDelete.style.display = item ? 'block' : 'none';
+
+    renderQuickCats();
+
+    overlay.classList.add('open');
+
+    if (inTelegram){
+      tg.BackButton.show();
+      tg.MainButton.setText(item ? 'Сохранить' : 'Добавить');
+      tg.MainButton.show();
+      tg.MainButton.offClick(handleMainButton);
+      tg.MainButton.onClick(handleMainButton);
+    }
+
+    setTimeout(function(){ fName.focus(); }, 200);
+  }
+
+  function closeModal(){
+    overlay.classList.remove('open');
+    editingId = null;
+    if (inTelegram){
+      tg.BackButton.hide();
+      tg.MainButton.hide();
+      tg.MainButton.offClick(handleMainButton);
+    }
+  }
+
+  function handleMainButton(){
+    saveFromModal();
+  }
+
+  function saveFromModal(){
+    var name = fName.value.trim();
+    if (!name){
+      haptic('error');
+      fName.focus();
+      return;
+    }
+    var planned = fPlanned.value === '' ? 0 : Number(fPlanned.value);
+    var actual = fActual.value === '' ? 0 : Number(fActual.value);
+    var category = fCategory.value.trim();
+
+    if (editingId){
+      var item = state.items.find(function(i){ return i.id === editingId; });
+      item.name = name;
+      item.category = category;
+      item.planned = planned;
+      item.actual = actual;
+    } else {
+      state.items.push({
+        id: uid(),
+        name: name,
+        category: category,
+        planned: planned,
+        actual: actual
+      });
+    }
+
+    scheduleSave();
+    haptic('success');
+    closeModal();
+    render();
+  }
+
+  function deleteCurrent(){
+    if (!editingId) return;
+    var doDelete = function(){
+      state.items = state.items.filter(function(i){ return i.id !== editingId; });
+      scheduleSave();
+      haptic('success');
+      closeModal();
+      render();
+    };
+    if (inTelegram && tg.showConfirm){
+      tg.showConfirm('Удалить эту статью расходов?', function(ok){
+        if (ok) doDelete();
+      });
+    } else {
+      if (confirm('Удалить эту статью расходов?')) doDelete();
+    }
+  }
+
+  btnDelete.addEventListener('click', deleteCurrent);
+  fabEl.addEventListener('click', function(){ haptic('light'); openModal(null); });
+
+  overlay.addEventListener('click', function(e){
+    if (e.target === overlay) closeModal();
+  });
+
+  if (inTelegram){
+    tg.BackButton.onClick(closeModal);
+  }
+
+  // fallback save button for browser preview (no MainButton outside Telegram)
+  if (!inTelegram){
+    var previewBar = document.createElement('div');
+    previewBar.style.cssText = 'position:fixed;left:0;right:0;bottom:0;padding:12px 16px;background:var(--bg);border-top:1px solid var(--secondary-bg);display:none;';
+    previewBar.id = 'previewBar';
+    previewBar.innerHTML = '<button class="btn btn-primary" style="width:100%" id="previewSave">Сохранить</button>';
+    document.body.appendChild(previewBar);
+    document.getElementById('previewSave').addEventListener('click', saveFromModal);
+  }
+
+  var origOpenModal = openModal;
+  openModal = function(id){
+    origOpenModal(id);
+    if (!inTelegram){
+      document.getElementById('previewBar').style.display = 'block';
+    }
+  };
+  var origCloseModal = closeModal;
+  closeModal = function(){
+    origCloseModal();
+    if (!inTelegram){
+      document.getElementById('previewBar').style.display = 'none';
+    }
+  };
+
+  // ---------- Init ----------
+  load().then(function(){
+    render();
+  });
+
+})();
+</script>
+</body>
+</html>
