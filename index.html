@@ -496,16 +496,16 @@
     var dateLabel = due.getDate() + ' ' + MONTHS_SHORT[due.getMonth()];
 
     if (isPaid(it)){
-      return { level: 'normal', text: 'Оплачено', diffDays: diffDays };
+      return { level: 'normal', text: 'Оплачено ✓', diffDays: diffDays };
     }
     if (diffDays < 0){
-      return { level: 'overdue', text: 'Просрочено на ' + Math.abs(diffDays) + ' дн.', diffDays: diffDays };
+      return { level: 'overdue', text: '🔴 Просрочено на ' + Math.abs(diffDays) + ' дн.', diffDays: diffDays };
     }
     if (diffDays === 0){
-      return { level: 'soon', text: 'Сегодня', diffDays: diffDays };
+      return { level: 'overdue', text: '🔴 Оплатить сегодня', diffDays: diffDays };
     }
-    if (diffDays <= 7){
-      return { level: 'soon', text: 'Через ' + diffDays + ' дн.', diffDays: diffDays };
+    if (diffDays < 14){
+      return { level: 'overdue', text: '🔴 Через ' + diffDays + ' дн. (до ' + dateLabel + ')', diffDays: diffDays };
     }
     return { level: 'normal', text: 'до ' + dateLabel, diffDays: diffDays };
   }
